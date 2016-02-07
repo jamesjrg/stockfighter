@@ -6,19 +6,20 @@ open System.Text
 open System.Threading
 open System.Net.WebSockets
 
-let encoder = new UTF8Encoding();
-let receiveChunkSize = 1024
+let private encoder = new UTF8Encoding();
+let private receiveChunkSize = 1024
+let private resetTimeout = 20000
 
 type ReceiveResult =
     | Success of string
     | Error of string
 
-type ReceiveResultInternal =
+type private ReceiveResultInternal =
     | Success of bool
     | Error of string
     | Close   
 
-let parseResult (receiveResult:WebSocketReceiveResult) buffer (stringBuilder:StringBuilder) =
+let private parseResult (receiveResult:WebSocketReceiveResult) buffer (stringBuilder:StringBuilder) =
     match receiveResult.MessageType with
     | WebSocketMessageType.Close ->        
         Close
@@ -27,21 +28,39 @@ let parseResult (receiveResult:WebSocketReceiveResult) buffer (stringBuilder:Str
     | WebSocketMessageType.Text ->
         let str = encoder.GetString(buffer |> Array.filter (fun x -> x <> 0uy))
         stringBuilder.Append(str) |> ignore
-        Success receiveResult.EndOfMessage
+        match str.Length with
+        | 0 -> Error "0 length string"
+        | _ -> Success receiveResult.EndOfMessage
+    | _ -> Error "this should be impossible"
 
-let receive (socket: ClientWebSocket) = async {    
+let withTimeout (operation: Async<'x>) (timeOut: int) = async {
+    let! child = Async.StartChild (operation, timeOut)
+    try
+        let! result = child
+        return Some result
+    with :? System.TimeoutException ->
+        return None
+}
+
+let private receive (socket: ClientWebSocket) = async {    
     let stringBuilder = new StringBuilder()
 
-    let rec receiveMore prevResult = async {
-        let buffer = Array.create<byte> receiveChunkSize 0uy
-        let! receiveResult = socket.ReceiveAsync(ArraySegment<byte>(buffer),CancellationToken.None) |> Async.AwaitTask
-
+    let rec receiveMore prevResult = async {        
         match prevResult with
         | Success true ->
             return ReceiveResult.Success <| stringBuilder.ToString()
         | Success false ->
-            let result = parseResult receiveResult buffer stringBuilder
-            return! receiveMore result
+            let buffer = Array.create<byte> receiveChunkSize 0uy
+            let! resultOrTimeout =
+                withTimeout
+                    (socket.ReceiveAsync(ArraySegment<byte>(buffer), CancellationToken.None) |> Async.AwaitTask)
+                    resetTimeout
+
+            match resultOrTimeout with
+            | Some result ->
+                let result = parseResult result buffer stringBuilder
+                return! receiveMore result
+            | None -> return ReceiveResult.Error "timeout"
         | Error str ->
             return ReceiveResult.Error str
         | Close ->
@@ -49,18 +68,24 @@ let receive (socket: ClientWebSocket) = async {
             return ReceiveResult.Error "Socket closed by host"
     }
     
-    return! receiveMore (Success true)
+    return! receiveMore (Success false)
 }
 
-let startSocket wsUri postMsg = async {
+let startSocket logger wsUri postMsg = async {
     let socket = new ClientWebSocket()
+    logger (sprintf "Connecting to %O" wsUri)
     do! socket.ConnectAsync(wsUri, CancellationToken.None) |> Async.AwaitTask
-
+    logger (sprintf "Connected")
     let mutable keepGoing = true
 
     while keepGoing do
         let! result = receive socket
         match result with
-        | ReceiveResult.Success str -> postMsg str
-        | ReceiveResult.Error str -> printfn "WebSocket error: %s" str; keepGoing <- false
+        | ReceiveResult.Success str ->
+            postMsg result
+        | ReceiveResult.Error str ->
+            postMsg result
+            logger (sprintf "Reconnecting to %O" wsUri)
+            do! socket.ConnectAsync(wsUri, CancellationToken.None) |> Async.AwaitTask
+            logger "Reconnected"
 }

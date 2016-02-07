@@ -58,11 +58,11 @@ and PlaceOrderFillInfo = {
 }
 
 type PlaceOrderRequest = {
-  Account: string
-  Price: int
-  Qty: int
-  Direction: string
-  OrderType: string
+    Account: string
+    Price: int
+    Qty: int
+    Direction: string
+    OrderType: string
 }
 
 type StartGameResponse = {
@@ -77,7 +77,7 @@ type StartGameResponse = {
 }
 and StartGameInstructions = {
     Instructions: string
-    OrderTypes: string //this would need some custom logic to deserialize as Newtonsoft doesn't have any simple wayo handle spaces in property names
+    OrderTypes: string //this would need some custom logic to deserialize as Newtonsoft doesn't have any simple way to handle spaces in property names
 }
 
 type QuoteTickerResponse = {
@@ -97,4 +97,40 @@ and QuoteTickerResponseQuote = {
     LastSize: int
     LastTrade: DateTime
     QuoteTime: DateTime
+}
+
+type ExecutionTickerResponse = {
+    Ok: bool
+    Account:  string
+    Venue: string
+    Symbol: string
+    Order: ExecutionTickerResponseOrder
+    StandingId: int
+    IncomingId: int
+    Price: int
+    Filled: int
+    FilledAt: DateTime
+    StandingComplete: bool  // whether the order that was on the book is now complete
+    IncomingComplete: bool  // whether the incoming order is complete (as of this execution)
+}
+and ExecutionTickerResponseOrder = {
+    Ok:  bool
+    Symbol: string
+    Venue: string
+    Direction: string
+    OriginalQty: int
+    Qty: int
+    Price: int
+    OrderType: string
+    Id: int
+    Account: string
+    Ts: DateTime
+    Fills: ExecutionTickerResponseFill list
+    TotalFilled: int
+    Open: bool
+}
+and ExecutionTickerResponseFill = {
+    Price: int
+    Qty: int
+    Ts: DateTime
 }

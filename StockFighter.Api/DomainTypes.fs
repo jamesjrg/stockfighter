@@ -14,3 +14,14 @@ type OrderDirection =
     | Buy
     | Sell
 
+type StockFighterEvent =
+    | ExecutionTickerResponse of ExecutionTickerResponse
+    | QuoteTickerResponse of QuoteTickerResponse
+
+type Order = {
+    Account: string
+    Price: int
+    Qty: int
+    Direction: OrderDirection
+    OrderType: OrderType
+}

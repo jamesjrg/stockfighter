@@ -18,20 +18,14 @@ open StockFighter.Api.Settings
 open StockFighter.Api.Stocks
 
 let apiKeyFile = @"C:\Users\james\Dropbox\dev\stockfighter\apikey.txt"
+let logFileLocation = @"C:\Users\james\Documents"
 let instanceSettingsFile = @"instance_settings.txt" //FSI in Visual Studio will put this in the user's temp folder
 let apiKey = IO.File.ReadAllText(apiKeyFile)
 
-let startLevel level = async {
-    let! response = GamesMaster.startLevel apiKey level
+let startLevel logger level = async {
+    let! response = GamesMaster.startLevel logger apiKey level
     let settings = createSettings apiKey response
     IO.File.WriteAllText(instanceSettingsFile, (serializeSettings settings));
-    return settings
-}
-
-let restart = async {
-    let settings = deserializeSettings(IO.File.ReadAllText(instanceSettingsFile))
-    let! result = GamesMaster.restartInstance apiKey settings.InstanceId
-    printfn "%s" result
     return settings
 }
 
@@ -39,5 +33,16 @@ let restart = async {
 let sync f =
     f |> Async.RunSynchronously
 
+let testStockTicker logger =
+    let settings = createTestSettings apiKey
+    StockTicker.create logger settings.Account settings.Venue
 
+let createLogger () =
+    let logFile = sprintf "%s/stockfighter_log_%s.txt" logFileLocation (DateTime.UtcNow.ToString("yy-MM-dd-HH-mm-ss"))
+    let logWriter = new IO.StreamWriter(logFile) //using from fsi so not disposing
 
+    let log (msg:string) = 
+        logWriter.WriteLine(msg)
+        logWriter.Flush()
+
+    log
