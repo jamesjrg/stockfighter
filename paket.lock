@@ -1,0 +1,7 @@
+NUGET
+  remote: https://www.nuget.org/api/v2
+  specs:
+    FSharp.Core (4.0.0.1)
+    Http.fs-prerelease (2.4.1)
+      FSharp.Core (>= 3.1.2.1)
+    Newtonsoft.Json (8.0.2)
