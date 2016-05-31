@@ -20,23 +20,29 @@ let restart = async {
 }
 
 module Level2 = 
+    let numberOfBidsAndAsksToFetch = 3
+
     let getTargetPrice (getQuote: Async<QuoteResponse option>) = async {
-        let mutable recentQuotes = []
-    
-        for i in [1..40] do 
-            let! newQuote = getQuote
-            do! Async.Sleep 200
-            if newQuote.IsSome then
-                recentQuotes <- newQuote.Value :: recentQuotes
+        let rec getQuotes (recentQuotes:QuoteResponse list) = async {
+            let nAsks = recentQuotes |> List.filter (fun x -> x.Ask > 0) |> List.length
+            let nBids = recentQuotes |> List.filter (fun x -> x.Bid > 0) |> List.length
 
-        let recentBids = recentQuotes |> Seq.map (fun x -> x.Bid) |> Seq.filter (fun x -> x > 0)
-        let recentAsks = recentQuotes |> Seq.map (fun x -> x.Ask) |> Seq.filter (fun x -> x > 0)
+            if nAsks < numberOfBidsAndAsksToFetch || nBids < numberOfBidsAndAsksToFetch then
+                let! newQuote = getQuote
+                do! Async.Sleep 200
+                match newQuote with
+                | Some quote -> return! getQuotes (quote :: recentQuotes)
+                | _ -> return! getQuotes recentQuotes
+            else
+                return recentQuotes
+        }
 
-        if Seq.isEmpty recentBids then failwith "Got no bids greater than 0"
-        if Seq.isEmpty recentAsks then failwith "Got no ask greater than 0"
-        
-        let bidAskSpread = (Seq.min recentAsks) - (Seq.max recentBids)
-        return (Seq.max recentBids) - (bidAskSpread / 4)
+        let! recentQuotes = getQuotes []
+
+        let recentAsks = recentQuotes |> Seq.map(fun x -> x.Ask) |> Seq.filter (fun x -> x > 0)
+        let recentBids = recentQuotes |> Seq.map(fun x -> x.Bid) |> Seq.filter (fun x -> x > 0)
+        let minBidAskSpread = (Seq.min recentAsks) - (Seq.max recentBids)
+        return Seq.min recentAsks
     }
 
     let go alreadyRunning = async {
@@ -50,9 +56,12 @@ module Level2 =
         let! targetPrice = getTargetPrice getQuote
         let targetQuantity = 100000
         let trancheSize = 2000
-        let mutable amountBought = 0
 
-        while amountBought < targetQuantity do
+        let rec goBuyStuff amountBought = async {
+            if amountBought >= targetQuantity then
+                ()
+            else
+
             printfn "Placing order"
             let order = {
                 Order.Account = settings.Account
@@ -64,8 +73,11 @@ module Level2 =
             let! result = placeOrder order
             printfn "Placed order"
             let newlyBought = result.Fills |> Seq.sumBy (fun x -> x.Qty)
-            amountBought <- amountBought + newlyBought
-            do! Async.Sleep(100)
+            do! Async.Sleep(500)
+            return! goBuyStuff (amountBought + newlyBought)
+        }
+
+        do! goBuyStuff 0            
     }
 
 module Level3 =
